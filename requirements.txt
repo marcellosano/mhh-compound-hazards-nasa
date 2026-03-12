@@ -1,0 +1,9 @@
+numpy>=1.21
+pandas>=1.3
+xarray>=2022.3
+netcdf4>=1.5
+matplotlib>=3.4
+seaborn>=0.11
+scikit-learn>=1.0
+ipywidgets>=7.6
+pyyaml>=6.0
