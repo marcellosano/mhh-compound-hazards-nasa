@@ -5007,20 +5007,41 @@ class MHHDashboard:
 # LAUNCH FUNCTION
 # ============================================================================
 
-def launch_dashboard():
-    """Launch the MHH DBSCAN Dashboard."""
+def launch_dashboard(config_path: str = None):
+    """Launch the MHH DBSCAN Dashboard.
+
+    Args:
+        config_path: Optional path to a YAML config file. If provided,
+                     loads this config before launching the dashboard.
+                     If None, uses whatever config was loaded at startup.
+    """
+    if config_path is not None:
+        Config.load_config(config_path)
+
     print("\n" + "=" * 80)
-    print("🚀 LAUNCHING DASHBOARD")
+    print(f"LAUNCHING DASHBOARD -- {Config.DATASET_NAME}")
     print("=" * 80)
-    print("\n📌 QUICK START:")
+    print(f"\n  Dataset:    {Config.DATASET_ID}")
+    print(f"  Region:     {Config.REGION_NAME}")
+    print(f"  Variables:  {len(Config.VARIABLE_CONFIG)}")
+    print(f"  Scenarios:  {Config.SCENARIOS}")
+    print("\n  QUICK START:")
     print("   1. Select a baseline run (or 'None' for fresh run)")
-    print("   2. Adjust parameters if needed (new: 'Max Gap' slider for gap-splitting)")
+    print("   2. Adjust parameters if needed")
     print("   3. Enter a description for your run")
-    print("   4. Click '🚀 Save & Run Smart'")
-    print("\n📌 FIXES INCLUDED IN THIS VERSION:")
-    print("   ✓ Spatial extent: Now uses grid-cell count (was bounding box)")
-    print("   ✓ Gap-splitting: Clusters split on temporal gaps > max_gap_days")
-    print("   ✓ ps eps_space: Reduced from 2.0° to 1.5°")
+    print("   4. Click 'Save & Run Smart'")
+
+    # Show available configs
+    _script_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else '.'
+    _config_dir = os.path.join(_script_dir, 'configs')
+    if os.path.isdir(_config_dir):
+        configs = sorted(glob.glob(os.path.join(_config_dir, '*.yaml')))
+        if configs:
+            print(f"\n  Available configs in configs/:")
+            for c in configs:
+                marker = " <-- active" if os.path.abspath(c) == os.path.abspath(config_path or '') else ""
+                print(f"    - {os.path.basename(c)}{marker}")
+            print(f"\n  To switch: launch_dashboard('configs/<name>.yaml')")
     print()
 
     dashboard = MHHDashboard()
