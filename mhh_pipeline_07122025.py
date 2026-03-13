@@ -676,7 +676,7 @@ def validate_section1():
 
     # Test 5: Validate Config class structure
     print("\n[Test 5] Validating Config class...")
-    required_attrs = ['BASE_PATH', 'PATHS', 'EUROPE_BOUNDS', 'TIME_PERIODS',
+    required_attrs = ['BASE_PATH', 'PATHS', 'REGION_BOUNDS', 'TIME_PERIODS',
                       'SCENARIOS', 'VARIABLE_CONFIG', 'MULTI_HAZARD_RULES']
     for attr in required_attrs:
         if hasattr(Config, attr):
@@ -1004,7 +1004,8 @@ class DataValidation:
 
         # Sample 1 file per variable for validation
         print(f"\nValidating sample files (1 per variable)...")
-        print(f"This checks: variable presence, dimensions, coordinates, Europe coverage\n")
+        region_name = getattr(Config, 'REGION_NAME', 'configured region')
+        print(f"This checks: variable presence, dimensions, coordinates, {region_name} coverage\n")
 
         validation_results = []
 
@@ -1068,20 +1069,23 @@ class DataValidation:
                         lon_range = (float(ds['lon'].min()), float(ds['lon'].max()))
                         print(f"  ✓ Spatial coverage: Lat [{lat_range[0]:.1f}, {lat_range[1]:.1f}], Lon [{lon_range[0]:.1f}, {lon_range[1]:.1f}]")
 
-                        # Check Europe coverage
-                        europe_bounds = Config.EUROPE_BOUNDS
-                        covers_europe = (
-                            lat_range[0] <= europe_bounds['lat_min'] and
-                            lat_range[1] >= europe_bounds['lat_max'] and
-                            lon_range[0] <= europe_bounds['lon_min'] and
-                            lon_range[1] >= europe_bounds['lon_max']
-                        )
+                        # Check region coverage
+                        region_bounds = Config.REGION_BOUNDS
+                        if region_bounds is not None:
+                            covers_region = (
+                                lat_range[0] <= region_bounds['lat_min'] and
+                                lat_range[1] >= region_bounds['lat_max'] and
+                                lon_range[0] <= region_bounds['lon_min'] and
+                                lon_range[1] >= region_bounds['lon_max']
+                            )
 
-                        if covers_europe:
-                            print(f"  ✓ Covers Europe region")
+                            if covers_region:
+                                print(f"  ✓ Covers {region_name} region")
+                            else:
+                                result["issues"].append(f"May not fully cover {region_name}")
+                                print(f"  ⚠ May not fully cover {region_name} region")
                         else:
-                            result["issues"].append("May not fully cover Europe")
-                            print(f"  ⚠ May not fully cover Europe region")
+                            print(f"  ✓ Global mode (no region subsetting)")
 
                     ds.close()
 
@@ -1184,8 +1188,8 @@ class ThresholdCalculation:
     """Section 3: Calculate historical thresholds for extreme detection."""
 
     @staticmethod
-    def load_and_subset_europe(filepath: str, variable: str) -> xr.DataArray:
-        """Load NetCDF file and subset to Europe region."""
+    def load_and_subset_region(filepath: str, variable: str) -> xr.DataArray:
+        """Load NetCDF file and subset to configured region (or keep global)."""
         # Use safe opening method (handles time decoding issues)
         ds = DataValidation.open_dataset_safe(filepath)
 
@@ -1195,33 +1199,40 @@ class ThresholdCalculation:
 
         da = ds[variable]
 
-        # Subset to Europe - handle both increasing and decreasing coordinates
-        europe = Config.EUROPE_BOUNDS
+        # Subset to region if bounds are configured, otherwise keep full extent
+        bounds = Config.REGION_BOUNDS
 
-        # Check coordinate order and use appropriate selection
-        lat_vals = da['lat'].values
-        lon_vals = da['lon'].values
+        if bounds is None:
+            # Global mode -- no subsetting
+            da_region = da
+        else:
+            # Check coordinate order and use appropriate selection
+            lat_vals = da['lat'].values
+            lon_vals = da['lon'].values
 
-        # For latitude
-        if lat_vals[0] < lat_vals[-1]:  # Increasing (e.g., -90 to 90)
-            da_subset = da.sel(lat=slice(europe['lat_min'], europe['lat_max']))
-        else:  # Decreasing (e.g., 90 to -90)
-            da_subset = da.sel(lat=slice(europe['lat_max'], europe['lat_min']))
+            # For latitude
+            if lat_vals[0] < lat_vals[-1]:  # Increasing (e.g., -90 to 90)
+                da_subset = da.sel(lat=slice(bounds['lat_min'], bounds['lat_max']))
+            else:  # Decreasing (e.g., 90 to -90)
+                da_subset = da.sel(lat=slice(bounds['lat_max'], bounds['lat_min']))
 
-        # For longitude
-        lon_vals_subset = da_subset['lon'].values
-        if lon_vals_subset[0] < lon_vals_subset[-1]:  # Increasing
-            da_europe = da_subset.sel(lon=slice(europe['lon_min'], europe['lon_max']))
-        else:  # Decreasing
-            da_europe = da_subset.sel(lon=slice(europe['lon_max'], europe['lon_min']))
+            # For longitude
+            lon_vals_subset = da_subset['lon'].values
+            if lon_vals_subset[0] < lon_vals_subset[-1]:  # Increasing
+                da_region = da_subset.sel(lon=slice(bounds['lon_min'], bounds['lon_max']))
+            else:  # Decreasing
+                da_region = da_subset.sel(lon=slice(bounds['lon_max'], bounds['lon_min']))
 
         ds.close()
 
         # Verify we got data
-        if da_europe.size == 0:
+        if da_region.size == 0:
             raise ValueError(f"Subsetting resulted in empty array for {filepath}")
 
-        return da_europe
+        return da_region
+
+    # Backward-compatible alias
+    load_and_subset_europe = load_and_subset_region
 
     @staticmethod
     def get_files_for_variable(inventory: pd.DataFrame, nc_var_name: str, period: str = 'historical') -> list:
@@ -1333,7 +1344,7 @@ class ThresholdCalculation:
 
                 for idx, filepath in enumerate(var_files, 1):
                     print(f"    Loading file {idx}/{len(var_files)}...", end='\r')
-                    da = ThresholdCalculation.load_and_subset_europe(filepath, nc_var_name)
+                    da = ThresholdCalculation.load_and_subset_region(filepath, nc_var_name)
 
                     # Debug: print shape of first file
                     if idx == 1:
@@ -1637,7 +1648,7 @@ class ExtremeDetection:
 
                 try:
                     # Load and subset data
-                    da = ThresholdCalculation.load_and_subset_europe(filepath, nc_var_name)
+                    da = ThresholdCalculation.load_and_subset_region(filepath, nc_var_name)
 
                     # Handle extra dimensions (e.g., depth for soilmoist)
                     if len(da.dims) > 3:
