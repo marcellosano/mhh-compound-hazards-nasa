@@ -1712,7 +1712,7 @@ class ExtremeDetection:
     @staticmethod
     def count_files_for_variable(extreme_files, var_key):
         """Count extreme files for a specific variable (exact match)."""
-        scenarios = ['historical', 'ssp126', 'ssp370', 'ssp585']
+        scenarios = Config.SCENARIOS
         count = 0
         for f in extreme_files:
             basename = os.path.basename(f)
@@ -1823,7 +1823,7 @@ class DBSCANClustering:
             # Find where scenario starts
             scenario_idx = -1
             for i, part in enumerate(parts):
-                if part in ['historical', 'ssp126', 'ssp370', 'ssp585']:
+                if part in Config.SCENARIOS:
                     scenario_idx = i
                     break
 
@@ -2142,7 +2142,7 @@ class DBSCANClustering:
 
         if hist_count > 0:
             print(f"\n  Events by scenario:")
-            for scenario in ['historical', 'ssp126', 'ssp370', 'ssp585']:
+            for scenario in Config.SCENARIOS:
                 count = len(df_catalog[df_catalog['scenario'] == scenario])
                 if scenario == 'historical':
                     print(f"    {scenario}: {count:4d} events")
@@ -2454,7 +2454,7 @@ class MultiHazardDetection:
         max_distance_km = 500
 
         multi_hazard_events = []
-        scenarios = ['historical', 'ssp126', 'ssp370', 'ssp585']
+        scenarios = Config.SCENARIOS
 
         for scenario in scenarios:
             print(f"\n  Processing scenario: {scenario}")
@@ -2585,7 +2585,7 @@ class MultiHazardDetection:
         max_distance_km = 500
 
         multi_hazard_events = []
-        scenarios = ['historical', 'ssp126', 'ssp370', 'ssp585']
+        scenarios = Config.SCENARIOS
 
         for scenario in scenarios:
             print(f"\n  Processing scenario: {scenario}")
@@ -2724,7 +2724,7 @@ class MultiHazardDetection:
         max_distance_km = 500
 
         multi_hazard_events = []
-        scenarios = ['historical', 'ssp126', 'ssp370', 'ssp585']
+        scenarios = Config.SCENARIOS
 
         for scenario in scenarios:
             print(f"\n  Processing scenario: {scenario}")
@@ -2869,7 +2869,7 @@ class MultiHazardDetection:
         for hazard_type, df in results.items():
             if df is not None:
                 print(f"\n  {hazard_type}:")
-                for scenario in ['historical', 'ssp126', 'ssp370', 'ssp585']:
+                for scenario in Config.SCENARIOS:
                     count = len(df[df['scenario'] == scenario])
                     if scenario == 'historical':
                         hist_count = count
