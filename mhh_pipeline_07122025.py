@@ -3051,11 +3051,39 @@ class MultiHazardDetection:
             print("\n❌ Section 6 FAILED: Could not load cluster catalogs")
             return None
 
-        # Step 6.2-6.4: Detect each multi-hazard type
+        # Step 6.2+: Detect each multi-hazard type
+        # Dispatch table maps rule names to detection methods
+        _detection_methods = {
+            'windstorm': MultiHazardDetection.detect_windstorm,
+            'flood': MultiHazardDetection.detect_flood,
+            'heat_drought_fire': MultiHazardDetection.detect_heat_drought_fire,
+        }
+
         results = {}
-        results['windstorm'] = MultiHazardDetection.detect_windstorm(catalogs, skip_existing)
-        results['flood'] = MultiHazardDetection.detect_flood(catalogs, skip_existing)
-        results['heat_drought_fire'] = MultiHazardDetection.detect_heat_drought_fire(catalogs, skip_existing)
+        available_vars = set(Config.VARIABLE_CONFIG.keys())
+
+        for rule_name, rule_cfg in Config.MULTI_HAZARD_RULES.items():
+            # Check enabled flag
+            if not rule_cfg.get('enabled', True):
+                print(f"\n  Skipping {rule_name}: disabled in config")
+                continue
+
+            # Validate that referenced variables exist in Config.VARIABLE_CONFIG
+            primary_vars = rule_cfg.get('primary', {}).get('variables', [])
+            conditioning_vars = rule_cfg.get('conditioning', {}).get('variables', [])
+            all_rule_vars = set(primary_vars + conditioning_vars)
+            missing_vars = all_rule_vars - available_vars
+
+            if missing_vars:
+                print(f"\n  Skipping {rule_name}: missing variables {missing_vars}")
+                continue
+
+            # Check if a detection method exists for this rule
+            detect_fn = _detection_methods.get(rule_name)
+            if detect_fn is not None:
+                results[rule_name] = detect_fn(catalogs, skip_existing)
+            else:
+                print(f"\n  Skipping {rule_name}: no detection method implemented")
 
         end_time = datetime.now()
         duration = end_time - start_time
