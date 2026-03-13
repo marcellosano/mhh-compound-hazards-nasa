@@ -1,0 +1,351 @@
+# =============================================================================
+# MHH Pipeline Configuration: NASA NEX-GDDP-CMIP6 (Example Template)
+# =============================================================================
+#
+# HOW TO CONFIGURE THIS PIPELINE FOR YOUR DATASET
+# ================================================
+#
+# This is a 3-step process:
+#
+# STEP 1: Define your variables
+#   - In the 'variables:' section below, list every climate variable you want
+#     to analyze. Each entry needs a file_pattern (to find files), nc_var_name
+#     (variable name inside the NetCDF), and detection parameters.
+#   - Add or remove variables freely -- the pipeline processes exactly what's here.
+#   - For variables that need to be computed from raw data (e.g., wind speed from
+#     u/v components), set 'derived: true' and specify the derivation recipe.
+#
+# STEP 2: Set thresholds and clustering parameters
+#   - extreme_type: "high" detects values above the threshold (e.g., extreme heat);
+#     "low" detects values below (e.g., drought).
+#   - percentile_strict: The quantile threshold (0.0-1.0). E.g., 0.99 = 99th percentile.
+#   - dbscan: Controls how spatiotemporally contiguous extreme cells are grouped
+#     into coherent events. See README.md for parameter guidance.
+#
+# STEP 3: Define compound hazard rules
+#   - In 'multi_hazard_rules:', define which variable combinations constitute
+#     compound events. Each rule needs a 'primary' driver and 'conditioning'
+#     co-occurring variables. Variables must reference keys from the variables section.
+#   - Set 'enabled: false' to skip a rule without removing it.
+#
+# =============================================================================
+
+dataset:
+  name: "NASA NEX-GDDP-CMIP6"
+  id: "nexgddp"
+
+# -----------------------------------------------------------------------------
+# Paths -- update these to match your Google Drive layout
+# -----------------------------------------------------------------------------
+paths:
+  output_root: "/content/drive/MyDrive/Work/MHH"
+  input_data: "/content/drive/MyDrive/Work/MHH/Data/NEX_GDDP"
+
+# -----------------------------------------------------------------------------
+# Spatial domain
+# Set bounds to null for global processing (no spatial subsetting).
+# Or specify a bounding box to focus on a region, e.g.:
+#   bounds:
+#     lat_min: 25.0
+#     lat_max: 50.0
+#     lon_min: -130.0
+#     lon_max: -60.0
+# -----------------------------------------------------------------------------
+spatial:
+  region_name: "Global"
+  grid_resolution_deg: 0.25
+  bounds: null  # null = process the full global grid
+
+# -----------------------------------------------------------------------------
+# Time periods
+# NEX-GDDP historical period is 1950-2014 (CMIP6 convention).
+# Adjust start/end to match your analysis window.
+# For yearly files, period matching uses the date range fallback.
+# -----------------------------------------------------------------------------
+time_periods:
+  historical:
+    start: "1981-01-01"
+    end: "2014-12-31"
+    label: "historical_1981_2014"
+  mid_century:
+    start: "2031-01-01"
+    end: "2060-12-31"
+    label: "mid_2031_2060"
+  late_century:
+    start: "2071-01-01"
+    end: "2100-12-31"
+    label: "late_2071_2100"
+
+# NEX-GDDP includes ssp245 in addition to ssp126/370/585
+scenarios:
+  - "historical"
+  - "ssp126"
+  - "ssp245"
+  - "ssp370"
+  - "ssp585"
+
+# -----------------------------------------------------------------------------
+# Output naming
+# -----------------------------------------------------------------------------
+output_folder_prefix: "MHH_DBSCAN_Global"
+
+# -----------------------------------------------------------------------------
+# File naming conventions
+# NEX-GDDP files: {var}_day_{model}_{scenario}_{variant}_{grid}_{year}.nc
+# Example: pr_day_ACCESS-CM2_historical_r1i1p1f1_gn_2014.nc
+# -----------------------------------------------------------------------------
+file_naming:
+  pattern_type: "nexgddp"
+  model_detection: []  # model name extracted from filename position, not prefix
+  time_decode_workarounds:
+    h08_1601_epoch: false  # NEX-GDDP time coordinates decode normally
+
+# =============================================================================
+# VARIABLES
+# =============================================================================
+# List every variable you want to analyze. The pipeline processes exactly
+# what's listed here -- add or remove entries as needed.
+#
+# NEX-GDDP-CMIP6 provides these raw variables:
+#   pr       - Precipitation (kg/m2/s)
+#   tasmax   - Daily maximum near-surface temperature (K)
+#   tasmin   - Daily minimum near-surface temperature (K)
+#   huss     - Near-surface specific humidity (kg/kg)
+#   rsds     - Surface downwelling shortwave radiation (W/m2)
+#   uas      - Eastward near-surface wind (m/s)
+#   vas      - Northward near-surface wind (m/s)
+#   rlds     - Surface downwelling longwave radiation (W/m2)
+#
+# NOT available in NEX-GDDP (available in ISIMIP3b via impact models):
+#   ps       - Surface air pressure
+#   qtot     - Total runoff
+#   soilmoist - Soil moisture
+#
+# Below are example variable configs. Modify thresholds and DBSCAN parameters
+# to match your research needs.
+# =============================================================================
+
+variables:
+  # ---------------------------
+  # Precipitation (raw)
+  # ---------------------------
+  pr:
+    long_name: "Precipitation"
+    file_pattern: "pr_day"          # matches "pr_day" in NEX-GDDP filenames
+    nc_var_name: "pr"               # variable name inside the NetCDF
+    units: "kg m-2 s-1"
+    extreme_type: "high"            # detect extreme rainfall
+    percentile_strict: 0.99         # 99th percentile threshold
+    percentile_relaxed: 0.90
+    fixed_threshold: 0.00023148     # 20 mm/day in kg/m2/s (20/86400)
+    use_fixed_as_minimum: true      # event must exceed BOTH percentile AND fixed
+    dbscan:
+      eps_space_deg: 1.5            # spatial radius (degrees)
+      eps_time_days: 1.0            # temporal radius (days)
+      min_samples: 15               # min points to form a cluster
+      max_gap_days: 2               # split clusters on gaps > this
+
+  # ---------------------------
+  # Daily maximum temperature (raw)
+  # ---------------------------
+  tasmax:
+    long_name: "Daily Maximum Temperature"
+    file_pattern: "tasmax_day"
+    nc_var_name: "tasmax"
+    units: "K"
+    extreme_type: "high"
+    percentile_strict: 0.95
+    percentile_relaxed: 0.90
+    fixed_threshold: 308.15         # ~35C in Kelvin
+    use_fixed_as_minimum: true
+    dbscan:
+      eps_space_deg: 1.0
+      eps_time_days: 3.0
+      min_samples: 20
+      max_gap_days: 5
+
+  # ---------------------------
+  # Wind speed (DERIVED from uas + vas)
+  # NEX-GDDP provides u/v components, not scalar wind speed.
+  # The pipeline computes: sfcwind = sqrt(uas^2 + vas^2)
+  # ---------------------------
+  sfcwind:
+    long_name: "Near-Surface Wind Speed (derived from uas/vas)"
+    file_pattern: "uas_day"         # primary file to find (uas)
+    nc_var_name: "sfcwind"          # internal name after derivation
+    units: "m s-1"
+    extreme_type: "high"
+    percentile_strict: 0.99
+    percentile_relaxed: 0.90
+    fixed_threshold: 17.2           # Beaufort 8 threshold
+    use_fixed_as_minimum: true
+    derived: true                   # <-- marks this as a computed variable
+    source_variables: ["uas", "vas"]  # raw inputs needed
+    derivation: "windspeed_from_uv"   # derivation function name
+    dbscan:
+      eps_space_deg: 1.5
+      eps_time_days: 1.0
+      min_samples: 15
+      max_gap_days: 2
+
+  # ---------------------------
+  # Relative humidity HIGH (DERIVED from huss + tasmax)
+  # NEX-GDDP provides specific humidity (huss), not relative (hurs).
+  # The pipeline converts using the Tetens formula.
+  # ---------------------------
+  hurs_high:
+    long_name: "Relative Humidity High (derived from huss)"
+    file_pattern: "huss_day"
+    nc_var_name: "hurs"
+    units: "%"
+    extreme_type: "high"
+    percentile_strict: 0.95
+    percentile_relaxed: 0.75
+    fixed_threshold: 95.0
+    use_fixed_as_minimum: false
+    derived: true
+    source_variables: ["huss", "tasmax"]
+    derivation: "rh_from_specific_humidity"
+    dbscan:
+      eps_space_deg: 1.5
+      eps_time_days: 1.0
+      min_samples: 15
+      max_gap_days: 2
+
+  # ---------------------------
+  # Relative humidity LOW (DERIVED from huss + tasmax)
+  # Same derivation as hurs_high, but detects LOW extremes (dry conditions).
+  # ---------------------------
+  hurs_low:
+    long_name: "Relative Humidity Low (derived from huss)"
+    file_pattern: "huss_day"
+    nc_var_name: "hurs"
+    units: "%"
+    extreme_type: "low"             # detect unusually DRY conditions
+    percentile_strict: 0.05
+    percentile_relaxed: 0.20
+    fixed_threshold: 30.0
+    use_fixed_as_minimum: false
+    derived: true
+    source_variables: ["huss", "tasmax"]
+    derivation: "rh_from_specific_humidity"
+    dbscan:
+      eps_space_deg: 1.0
+      eps_time_days: 3.0
+      min_samples: 20
+      max_gap_days: 6
+
+  # ---------------------------
+  # Precipitation deficit (30-day rolling sum, from raw pr)
+  # Uses the same pr files but applies a 30-day rolling window
+  # before thresholding, detecting sustained dry periods.
+  # ---------------------------
+  pr_deficit:
+    long_name: "Precipitation Deficit (30-day)"
+    file_pattern: "pr_day"
+    nc_var_name: "pr"
+    units: "kg m-2 s-1"
+    extreme_type: "low"
+    percentile_strict: 0.10
+    percentile_relaxed: 0.20
+    fixed_threshold: null
+    use_fixed_as_minimum: false
+    rolling_window_days: 30         # apply 30-day rolling sum before threshold
+    dbscan:
+      eps_space_deg: 1.0
+      eps_time_days: 7.0
+      min_samples: 25
+      max_gap_days: 14
+
+  # ==========================================================================
+  # TO ADD A NEW VARIABLE:
+  # Copy any entry above and modify. For a raw (non-derived) variable:
+  #
+  #   my_variable:
+  #     long_name: "Description"
+  #     file_pattern: "rsds_day"      # string to match in filenames
+  #     nc_var_name: "rsds"           # NetCDF variable name
+  #     units: "W m-2"
+  #     extreme_type: "high"          # or "low"
+  #     percentile_strict: 0.95
+  #     percentile_relaxed: 0.90
+  #     fixed_threshold: null         # or a numeric value
+  #     use_fixed_as_minimum: false
+  #     dbscan:
+  #       eps_space_deg: 1.0
+  #       eps_time_days: 2.0
+  #       min_samples: 20
+  #       max_gap_days: 5
+  # ==========================================================================
+
+# =============================================================================
+# MULTI-HAZARD RULES
+# =============================================================================
+# Define compound hazard types as combinations of variables.
+# Each rule specifies:
+#   - primary: The driving hazard (e.g., extreme heat)
+#   - conditioning: Co-occurring hazard indicators
+#   - time_lag_days: Max temporal offset for co-occurrence
+#
+# Variables in 'primary' and 'conditioning' must match keys from the
+# 'variables:' section above. Rules referencing missing variables are
+# automatically skipped.
+# =============================================================================
+
+multi_hazard_rules:
+  # Windstorm detection requires surface pressure (ps), which is not
+  # available in NEX-GDDP. Disabled.
+  windstorm:
+    enabled: false
+    description: "NOT AVAILABLE: No surface pressure (ps) in NEX-GDDP"
+    time_lag_days: 2
+    primary:
+      variables: ["ps"]
+      min_required: 1
+    conditioning:
+      variables: ["sfcwind"]
+      min_required: 1
+
+  # Flood detection with runoff/soil moisture conditioning is not possible
+  # in NEX-GDDP. Disabled.
+  flood:
+    enabled: false
+    description: "NOT AVAILABLE: No runoff (qtot) or soil moisture in NEX-GDDP"
+    time_lag_days: 7
+    primary:
+      variables: ["pr"]
+      min_required: 1
+    conditioning:
+      variables: ["qtot", "soilmoist_wet"]
+      min_required: 1
+
+  # Heatwave/drought compound: extreme heat + low humidity + precipitation deficit.
+  # This works with NEX-GDDP derived variables.
+  heat_drought_fire:
+    enabled: true
+    description: "Compound heatwave: extreme heat with dryness indicators"
+    time_lag_days: 14
+    primary:
+      variables: ["tasmax"]           # extreme heat is the driver
+      min_required: 1
+    conditioning:
+      variables: ["hurs_low", "pr_deficit"]  # available dryness indicators
+      min_required: 1
+
+  # ==========================================================================
+  # TO ADD A NEW COMPOUND HAZARD RULE:
+  #
+  #   my_compound_type:
+  #     enabled: true
+  #     description: "Description of the compound hazard"
+  #     time_lag_days: 7
+  #     primary:
+  #       variables: ["var_key_1"]    # keys from variables: section
+  #       min_required: 1
+  #     conditioning:
+  #       variables: ["var_key_2", "var_key_3"]
+  #       min_required: 1
+  #
+  # Note: You also need a corresponding detect_* method in the pipeline's
+  # MultiHazardDetection class for custom compound types.
+  # ==========================================================================
