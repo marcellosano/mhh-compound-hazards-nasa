@@ -552,7 +552,7 @@ else:
 # Verify MHH output folder exists
 if os.path.exists(Config.MHH_OUTPUT_PATH):
     import glob as glob_check
-    existing = glob_check.glob(os.path.join(Config.MHH_OUTPUT_PATH, "MHH_DBSCAN_Europe_*"))
+    existing = glob_check.glob(os.path.join(Config.MHH_OUTPUT_PATH, f"{Config.OUTPUT_FOLDER_PREFIX}_*"))
     print(f"✓ Output folder exists ({len(existing)} previous runs found)")
 else:
     print(f"⚠ Warning: Output folder not found, will be created on first run")
@@ -3069,8 +3069,8 @@ def find_existing_runs(base_path):
     """
     # Search in base_path and one level deeper
     search_paths = [
-        os.path.join(base_path, "MHH_DBSCAN_Europe_*"),
-        os.path.join(base_path, "*", "MHH_DBSCAN_Europe_*"),  # One level deeper
+        os.path.join(base_path, f"{Config.OUTPUT_FOLDER_PREFIX}_*"),
+        os.path.join(base_path, "*", f"{Config.OUTPUT_FOLDER_PREFIX}_*"),  # One level deeper
     ]
 
     all_folders = []
@@ -4114,7 +4114,7 @@ class MHHDashboard:
         """Generate folder preview HTML."""
         desc = self.description_input.value.strip().replace(' ', '_').lower() if hasattr(self, 'description_input') else 'run'
         timestamp = datetime.now().strftime('%Y%m%d_%H%M')
-        folder_name = f"MHH_DBSCAN_Europe_{timestamp}_{desc}"
+        folder_name = f"{Config.OUTPUT_FOLDER_PREFIX}_{timestamp}_{desc}"
         full_path = os.path.join(self.base_output_path, folder_name)
 
         return f"""
@@ -4316,7 +4316,7 @@ class MHHDashboard:
 
             desc_clean = desc.replace(' ', '_').lower()
             timestamp = datetime.now().strftime('%Y%m%d_%H%M')
-            folder_name = f"MHH_DBSCAN_Europe_{timestamp}_{desc_clean}"
+            folder_name = f"{Config.OUTPUT_FOLDER_PREFIX}_{timestamp}_{desc_clean}"
             output_path = os.path.join(self.base_output_path, folder_name)
 
             os.makedirs(output_path, exist_ok=True)
@@ -4341,7 +4341,7 @@ class MHHDashboard:
 
             desc_clean = desc.replace(' ', '_').lower()
             timestamp = datetime.now().strftime('%Y%m%d_%H%M')
-            folder_name = f"MHH_DBSCAN_Europe_{timestamp}_{desc_clean}"
+            folder_name = f"{Config.OUTPUT_FOLDER_PREFIX}_{timestamp}_{desc_clean}"
             output_path = os.path.join(self.base_output_path, folder_name)
 
             # Create and display progress tracker
@@ -4505,7 +4505,7 @@ class MHHDashboard:
 
             desc_clean = desc.replace(' ', '_').lower()
             timestamp = datetime.now().strftime('%Y%m%d_%H%M')
-            folder_name = f"MHH_DBSCAN_Europe_{timestamp}_{desc_clean}"
+            folder_name = f"{Config.OUTPUT_FOLDER_PREFIX}_{timestamp}_{desc_clean}"
             output_path = os.path.join(self.base_output_path, folder_name)
 
             # Create and display progress tracker
