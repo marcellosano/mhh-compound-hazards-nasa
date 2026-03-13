@@ -72,6 +72,7 @@ import os
 import gc
 import glob
 import warnings
+import yaml
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
@@ -414,10 +415,129 @@ class Config:
         },
     }
 
+    # Output folder prefix (used for run folder naming)
+    OUTPUT_FOLDER_PREFIX = "MHH_DBSCAN_Europe"
+
+    # File naming conventions (for data loader)
+    FILE_NAMING = {
+        "pattern_type": "isimip",
+        "model_detection": [
+            {"prefix": "h08_", "source": "H08", "model": "H08"},
+            {"prefix": "mpi", "source": "MPI-ESM1-2-HR", "model": "MPI-ESM1-2-HR"},
+        ],
+        "time_decode_workarounds": {"h08_1601_epoch": True},
+    }
+
+    # Dataset identity
+    DATASET_NAME = "ISIMIP3b Europe"
+    DATASET_ID = "isimip3b"
+
+    # Region name (for messages and folder naming)
+    REGION_NAME = "Europe"
+
+    # Alias for backward compatibility
+    REGION_BOUNDS = EUROPE_BOUNDS
+
+    @classmethod
+    def load_config(cls, config_path: str):
+        """Load dataset configuration from a YAML file.
+
+        Populates all Config class attributes from the YAML, making the
+        pipeline dataset-agnostic. If called, overrides the hardcoded defaults.
+
+        Args:
+            config_path: Path to a YAML config file (e.g., configs/isimip3b_europe.yaml)
+        """
+        with open(config_path, 'r') as f:
+            cfg = yaml.safe_load(f)
+
+        # Dataset identity
+        ds = cfg.get('dataset', {})
+        cls.DATASET_NAME = ds.get('name', 'Unknown Dataset')
+        cls.DATASET_ID = ds.get('id', 'unknown')
+
+        # Paths
+        paths = cfg.get('paths', {})
+        cls.MHH_OUTPUT_PATH = paths.get('output_root', cls.MHH_OUTPUT_PATH)
+        cls.INPUT_DATA_PATH = paths.get('input_data', cls.INPUT_DATA_PATH)
+        cls.BASE_PATH = paths.get('base_path', os.path.join(cls.MHH_OUTPUT_PATH, '_current_run'))
+        cls.PATHS = {
+            "input": cls.INPUT_DATA_PATH,
+            "phase2_thresholds": os.path.join(cls.BASE_PATH, "Phase2_Thresholds"),
+            "phase2_extremes": os.path.join(cls.BASE_PATH, "Phase2_Extremes"),
+            "phase3_clusters": os.path.join(cls.BASE_PATH, "Phase3_Clusters"),
+            "phase4_footprints": os.path.join(cls.BASE_PATH, "Phase4_Footprints"),
+            "phase5_analysis": os.path.join(cls.BASE_PATH, "Phase5_Analysis"),
+            "validation_logs": os.path.join(cls.BASE_PATH, "validation_logs"),
+        }
+
+        # Spatial
+        spatial = cfg.get('spatial', {})
+        cls.REGION_NAME = spatial.get('region_name', 'Unknown')
+        cls.GRID_RESOLUTION_DEG = spatial.get('grid_resolution_deg', 0.5)
+        bounds = spatial.get('bounds', None)
+        if bounds is not None:
+            cls.REGION_BOUNDS = bounds
+            cls.EUROPE_BOUNDS = bounds  # backward compat alias
+        else:
+            cls.REGION_BOUNDS = None
+            cls.EUROPE_BOUNDS = None
+
+        # Time periods
+        cls.TIME_PERIODS = cfg.get('time_periods', cls.TIME_PERIODS)
+        cls.SCENARIOS = cfg.get('scenarios', cls.SCENARIOS)
+
+        # Output folder prefix
+        cls.OUTPUT_FOLDER_PREFIX = cfg.get('output_folder_prefix',
+                                           f"MHH_DBSCAN_{cls.REGION_NAME}")
+
+        # File naming conventions
+        cls.FILE_NAMING = cfg.get('file_naming', cls.FILE_NAMING)
+
+        # Variables
+        variables = cfg.get('variables', {})
+        if variables:
+            cls.VARIABLE_CONFIG = {}
+            for var_key, var_cfg in variables.items():
+                # Convert YAML null to Python None
+                if var_cfg.get('fixed_threshold') is None:
+                    var_cfg['fixed_threshold'] = None
+                cls.VARIABLE_CONFIG[var_key] = var_cfg
+
+        # Multi-hazard rules
+        rules = cfg.get('multi_hazard_rules', None)
+        if rules is not None:
+            cls.MULTI_HAZARD_RULES = rules
+
+        print(f"\n{'='*80}")
+        print(f"CONFIG LOADED: {cls.DATASET_NAME}")
+        print(f"{'='*80}")
+        print(f"  Dataset:    {cls.DATASET_ID}")
+        print(f"  Region:     {cls.REGION_NAME}")
+        print(f"  Resolution: {cls.GRID_RESOLUTION_DEG} deg")
+        print(f"  Variables:  {len(cls.VARIABLE_CONFIG)}")
+        print(f"  Scenarios:  {cls.SCENARIOS}")
+        print(f"  Rules:      {list(cls.MULTI_HAZARD_RULES.keys())}")
+        print(f"  Config:     {config_path}")
+
 
 # --------------------------------------------
-# 1.4 Path Configuration Info
+# 1.4 Path Configuration Info & Config Loading
 # --------------------------------------------
+# Auto-load config from environment variable or default location
+_config_path = os.environ.get('MHH_CONFIG', None)
+if _config_path is None:
+    # Try to find config relative to this script
+    _script_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else '.'
+    _default_config = os.path.join(_script_dir, 'configs', 'isimip3b_europe.yaml')
+    if os.path.exists(_default_config):
+        _config_path = _default_config
+
+if _config_path and os.path.exists(_config_path):
+    Config.load_config(_config_path)
+else:
+    print(f"\nUsing hardcoded defaults (no YAML config found)")
+    print(f"  Set MHH_CONFIG environment variable to load a config file")
 print(f"\nConfigured paths:")
 print(f"  Runs folder: {Config.MHH_OUTPUT_PATH}")
 print(f"  Input data:  {Config.INPUT_DATA_PATH}")
