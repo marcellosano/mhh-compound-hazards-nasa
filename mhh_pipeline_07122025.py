@@ -620,7 +620,66 @@ class Utils:
 
 
 # --------------------------------------------
-# 1.6 Validation
+# 1.6 Variable Derivations
+# --------------------------------------------
+
+class Derivations:
+    """Variable derivation functions for datasets requiring computed variables.
+
+    Each method takes xarray DataArrays as input and returns a derived DataArray.
+    Derivation names in YAML configs map to these methods.
+    """
+
+    REGISTRY = {}  # name -> function mapping, populated below
+
+    @staticmethod
+    def windspeed_from_uv(source_arrays: dict) -> xr.DataArray:
+        """Calculate wind speed from u and v wind components.
+
+        Args:
+            source_arrays: dict with keys 'uas' and 'vas' (DataArrays)
+        Returns:
+            Wind speed DataArray: sqrt(uas^2 + vas^2)
+        """
+        uas = source_arrays['uas']
+        vas = source_arrays['vas']
+        return np.sqrt(uas**2 + vas**2)
+
+    @staticmethod
+    def rh_from_specific_humidity(source_arrays: dict) -> xr.DataArray:
+        """Convert specific humidity to relative humidity using Tetens formula.
+
+        Args:
+            source_arrays: dict with keys 'huss' and 'tasmax' (or 'tas') (DataArrays)
+                           Optionally 'ps' for surface pressure (defaults to 101325 Pa)
+        Returns:
+            Relative humidity DataArray (%)
+        """
+        huss = source_arrays['huss']
+        # Use tasmax if available, else tas
+        tas = source_arrays.get('tasmax', source_arrays.get('tas'))
+        if tas is None:
+            raise ValueError("rh_from_specific_humidity requires 'tasmax' or 'tas' in source_arrays")
+        ps_val = source_arrays.get('ps', 101325.0)
+
+        # Saturation vapor pressure (Tetens formula)
+        es = 611.2 * np.exp(17.67 * (tas - 273.15) / (tas - 273.15 + 243.5))
+        # Actual vapor pressure from specific humidity
+        e = huss * ps_val / (0.622 + 0.378 * huss)
+        # Relative humidity
+        rh = 100.0 * e / es
+        return rh.clip(0, 100)
+
+
+# Register derivation functions
+Derivations.REGISTRY = {
+    'windspeed_from_uv': Derivations.windspeed_from_uv,
+    'rh_from_specific_humidity': Derivations.rh_from_specific_humidity,
+}
+
+
+# --------------------------------------------
+# 1.7 Validation
 # --------------------------------------------
 
 def validate_section1():
@@ -1301,6 +1360,61 @@ class ThresholdCalculation:
     load_and_subset_europe = load_and_subset_region
 
     @staticmethod
+    def load_derived_variable(filepath: str, var_cfg: dict, inventory: pd.DataFrame = None) -> xr.DataArray:
+        """Load a derived variable by computing it from source variables.
+
+        For derived variables (e.g., wind speed from uas/vas), this method:
+        1. Loads the primary source file (matched by file_pattern)
+        2. Finds and loads additional source variable files for the same time period
+        3. Applies the derivation function
+
+        Args:
+            filepath: Path to the primary source file
+            var_cfg: Variable configuration dict (must have 'derived', 'source_variables', 'derivation')
+            inventory: File inventory DataFrame (used to find companion files)
+        Returns:
+            Derived DataArray with the computed variable
+        """
+        derivation_name = var_cfg.get('derivation', '')
+        source_var_names = var_cfg.get('source_variables', [])
+        derive_fn = Derivations.REGISTRY.get(derivation_name)
+
+        if derive_fn is None:
+            raise ValueError(f"Unknown derivation function: {derivation_name}")
+
+        # Load the primary source file
+        primary_var = source_var_names[0] if source_var_names else None
+        source_arrays = {}
+
+        # Load primary variable from the given filepath
+        if primary_var:
+            source_arrays[primary_var] = ThresholdCalculation.load_and_subset_region(filepath, primary_var)
+
+        # Load additional source variables from companion files
+        if inventory is not None and len(source_var_names) > 1:
+            # Get the time period identifier from the primary file
+            primary_filename = os.path.basename(filepath)
+            primary_row = inventory[inventory['filename'] == primary_filename]
+
+            if not primary_row.empty:
+                period = primary_row.iloc[0].get('period', 'unknown')
+                decade = primary_row.iloc[0].get('decade', 'unknown')
+
+                for src_var in source_var_names[1:]:
+                    # Find companion file with same period/decade
+                    companion = inventory[
+                        (inventory['variable'] == src_var) &
+                        (inventory['decade'] == decade)
+                    ]
+                    if not companion.empty:
+                        companion_path = companion.iloc[0]['filepath']
+                        source_arrays[src_var] = ThresholdCalculation.load_and_subset_region(
+                            companion_path, src_var)
+
+        # Apply derivation
+        return derive_fn(source_arrays)
+
+    @staticmethod
     def get_files_for_variable(inventory: pd.DataFrame, nc_var_name: str, period: str = 'historical') -> list:
         """Get file paths for a specific NetCDF variable and period."""
         mask = (inventory['variable'] == nc_var_name) & (inventory['period'] == period)
@@ -1408,12 +1522,18 @@ class ThresholdCalculation:
                 print(f"  Loading data...")
                 data_arrays = []
 
+                is_derived = var_cfg.get('derived', False)
                 for idx, filepath in enumerate(var_files, 1):
                     print(f"    Loading file {idx}/{len(var_files)}...", end='\r')
-                    da = ThresholdCalculation.load_and_subset_region(filepath, nc_var_name)
+                    if is_derived:
+                        da = ThresholdCalculation.load_derived_variable(filepath, var_cfg, inventory)
+                    else:
+                        da = ThresholdCalculation.load_and_subset_region(filepath, nc_var_name)
 
                     # Debug: print shape of first file
                     if idx == 1:
+                        if is_derived:
+                            print(f"\n    Derived variable: {var_cfg.get('derivation', '')}")
                         print(f"\n    First file shape: {da.shape}")
                         print(f"    Lat range: [{float(da.lat.min()):.1f}, {float(da.lat.max()):.1f}]")
                         print(f"    Lon range: [{float(da.lon.min()):.1f}, {float(da.lon.max()):.1f}]")
@@ -1713,8 +1833,12 @@ class ExtremeDetection:
                     continue
 
                 try:
-                    # Load and subset data
-                    da = ThresholdCalculation.load_and_subset_region(filepath, nc_var_name)
+                    # Load and subset data (handle derived variables)
+                    is_derived = var_cfg.get('derived', False)
+                    if is_derived:
+                        da = ThresholdCalculation.load_derived_variable(filepath, var_cfg, inventory)
+                    else:
+                        da = ThresholdCalculation.load_and_subset_region(filepath, nc_var_name)
 
                     # Handle extra dimensions (e.g., depth for soilmoist)
                     if len(da.dims) > 3:
