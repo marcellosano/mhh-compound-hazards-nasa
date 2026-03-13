@@ -824,6 +824,76 @@ class DataValidation:
         return True
 
     @staticmethod
+    def _parse_model_isimip(filename, parts):
+        """Parse model/source from ISIMIP3b filename convention."""
+        model_rules = Config.FILE_NAMING.get('model_detection', [])
+        for rule in model_rules:
+            if filename.startswith(rule['prefix']):
+                return rule['source'], rule['model']
+        return "unknown", parts[0] if len(parts) > 0 else "unknown"
+
+    @staticmethod
+    def _parse_filename_nexgddp(filename, parts):
+        """Parse NEX-GDDP-CMIP6 filename convention.
+        Format: {var}_day_{model}_{scenario}_{variant}_{grid}_{year}.nc
+        """
+        record = {}
+        if len(parts) >= 7:
+            # parts[0] = variable, parts[1] = "day"
+            record["model"] = parts[2]
+            record["source"] = parts[2]
+            record["scenario"] = parts[3]
+            # parts[4] = variant (e.g., r1i1p1f1)
+            # parts[5] = grid (e.g., gn)
+            try:
+                year = int(parts[6])
+                record["start_year"] = year
+                record["end_year"] = year
+                record["decade"] = str(year)
+            except ValueError:
+                record["start_year"] = None
+                record["end_year"] = None
+                record["decade"] = "unknown"
+        else:
+            record["source"] = "unknown"
+            record["model"] = parts[0] if len(parts) > 0 else "unknown"
+            record["start_year"] = None
+            record["end_year"] = None
+            record["decade"] = "unknown"
+        return record
+
+    @staticmethod
+    def _match_period(record):
+        """Match a file record to a time period from Config.TIME_PERIODS."""
+        record["period"] = "unknown"
+        decade = record.get("decade", "unknown")
+        start_year = record.get("start_year")
+        if decade == "unknown":
+            return
+
+        for period_name, period_cfg in Config.TIME_PERIODS.items():
+            # Check file_decades (ISIMIP style: "1981_1990")
+            if "file_decades" in period_cfg:
+                if decade in period_cfg["file_decades"]:
+                    record["period"] = period_name
+                    return
+            # Check file_years (NEX-GDDP style: year range)
+            if "file_years" in period_cfg:
+                if start_year in period_cfg["file_years"]:
+                    record["period"] = period_name
+                    return
+            # Fallback: check if start_year falls within period date range
+            if start_year is not None and "start" in period_cfg and "end" in period_cfg:
+                try:
+                    p_start = int(period_cfg["start"][:4])
+                    p_end = int(period_cfg["end"][:4])
+                    if p_start <= start_year <= p_end:
+                        record["period"] = period_name
+                        return
+                except (ValueError, TypeError):
+                    pass
+
+    @staticmethod
     def step2_build_inventory():
         """Step 2.2: Build comprehensive file inventory."""
         print("\n" + "=" * 80)
@@ -855,27 +925,43 @@ class DataValidation:
 
                 # Parse filename
                 parts = filename.replace(".nc", "").split("_")
+                pattern_type = Config.FILE_NAMING.get('pattern_type', 'isimip')
 
-                # Detect source/model
-                if filename.startswith("h08_"):
-                    record["source"] = "H08"
-                    record["model"] = "H08"
-                elif filename.startswith("mpi"):
-                    record["source"] = "MPI-ESM1-2-HR"
-                    record["model"] = "MPI-ESM1-2-HR"
+                if pattern_type == 'nexgddp':
+                    # NEX-GDDP: {var}_day_{model}_{scenario}_{variant}_{grid}_{year}.nc
+                    parsed = DataValidation._parse_filename_nexgddp(filename, parts)
+                    record.update(parsed)
                 else:
-                    record["source"] = "unknown"
-                    record["model"] = parts[0] if len(parts) > 0 else "unknown"
+                    # ISIMIP (default): model detected from prefix
+                    source, model = DataValidation._parse_model_isimip(filename, parts)
+                    record["source"] = source
+                    record["model"] = model
 
-                # Detect scenario
-                record["scenario"] = "unknown"
-                for scenario in Config.SCENARIOS:
-                    if scenario in filename.lower():
-                        record["scenario"] = scenario
-                        break
+                    # Extract years from last two parts (decade files)
+                    if len(parts) >= 2:
+                        try:
+                            record["start_year"] = int(parts[-2])
+                            record["end_year"] = int(parts[-1])
+                            record["decade"] = f"{parts[-2]}_{parts[-1]}"
+                        except ValueError:
+                            record["start_year"] = None
+                            record["end_year"] = None
+                            record["decade"] = "unknown"
+                    else:
+                        record["start_year"] = None
+                        record["end_year"] = None
+                        record["decade"] = "unknown"
 
-                # Detect variable
-                record["variable"] = "unknown"
+                # Detect scenario (common to all formats)
+                if "scenario" not in record or record["scenario"] == "unknown":
+                    record["scenario"] = "unknown"
+                    for scenario in Config.SCENARIOS:
+                        if scenario in filename.lower():
+                            record["scenario"] = scenario
+                            break
+
+                # Detect variable (common to all formats)
+                record["variable"] = record.get("variable", "unknown")
                 record["variable_key"] = "unknown"
                 record["long_name"] = "unknown"
 
@@ -887,28 +973,8 @@ class DataValidation:
                         record["long_name"] = var_cfg["long_name"]
                         break
 
-                # Extract years
-                if len(parts) >= 2:
-                    try:
-                        record["start_year"] = int(parts[-2])
-                        record["end_year"] = int(parts[-1])
-                        record["decade"] = f"{parts[-2]}_{parts[-1]}"
-                    except ValueError:
-                        record["start_year"] = None
-                        record["end_year"] = None
-                        record["decade"] = "unknown"
-                else:
-                    record["start_year"] = None
-                    record["end_year"] = None
-                    record["decade"] = "unknown"
-
                 # Determine time period
-                record["period"] = "unknown"
-                if record.get("decade") and record["decade"] != "unknown":
-                    for period_name, period_cfg in Config.TIME_PERIODS.items():
-                        if record["decade"] in period_cfg["file_decades"]:
-                            record["period"] = period_name
-                            break
+                DataValidation._match_period(record)
 
                 inventory.append(record)
 
