@@ -81,7 +81,9 @@ The pipeline finds primary single-hazard events, then searches for conditioning 
 
 ### Derived variables
 
-For datasets where some variables need to be computed from raw fields, use the `derived` flag:
+Some datasets provide raw component fields rather than the physical quantity the pipeline needs. For example, NEX-GDDP-CMIP6 provides eastward (`uas`) and northward (`vas`) wind components instead of scalar wind speed (`sfcwind`), and specific humidity (`huss`, in kg/kg) instead of relative humidity (`hurs`, in %). The pipeline can compute the required variables automatically at load time using built-in derivation functions — no preprocessing needed.
+
+To use a derived variable, set `derived: true` in its config and specify the source variables and derivation function:
 
 ```yaml
 sfcwind:
@@ -92,8 +94,10 @@ sfcwind:
 ```
 
 Built-in derivation functions:
-- `windspeed_from_uv` -- Wind speed from u/v components: `sqrt(uas^2 + vas^2)`
-- `rh_from_specific_humidity` -- Relative humidity from specific humidity + temperature (Tetens formula)
+- `windspeed_from_uv` -- Computes scalar wind speed from u/v components: `sqrt(uas^2 + vas^2)`. Use when your dataset provides separate eastward and northward wind fields.
+- `rh_from_specific_humidity` -- Converts specific humidity (kg/kg) to relative humidity (%) using the Tetens formula for saturation vapour pressure, with temperature from `tasmax`. Use when your dataset provides `huss` instead of `hurs`.
+
+If your dataset already provides a variable directly (e.g., ISIMIP3b provides `sfcwind` and `hurs` as-is), no derivation is needed — just point `file_pattern` and `nc_var_name` at the files.
 
 ### Example configs
 
