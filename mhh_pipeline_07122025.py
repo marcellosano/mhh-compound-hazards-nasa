@@ -1964,12 +1964,17 @@ class DBSCANClustering:
         try:
             # ================================================================
             # FIX: Try normal open first, fall back to decode_times=False
+            # Guarded by config flag for dataset-specific workarounds
             # ================================================================
             h08_fallback = False
+            h08_workaround_enabled = Config.FILE_NAMING.get(
+                'time_decode_workarounds', {}).get('h08_1601_epoch', False)
             try:
                 da_extremes = xr.open_dataarray(filepath)
             except ValueError as e:
-                if "unable to decode time" in str(e) or "1601-01-01" in str(e):
+                if h08_workaround_enabled and (
+                    "unable to decode time" in str(e) or "1601-01-01" in str(e)
+                ):
                     # H08 model files have non-standard time encoding
                     h08_fallback = True
 
