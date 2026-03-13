@@ -114,10 +114,8 @@ Core dependencies: numpy, pandas, xarray, netcdf4, scikit-learn, matplotlib, sea
 
 ## Citation
 
-If you use this pipeline, please cite:
-
-> Sano, M., Ferrario, D.M., Torresan, S., Critto, A. (in preparation). Compound meteorological-hydrological hazard detection using DBSCAN clustering of climate projections. *Nature Climate Change*.
+TBC
 
 ## License
 
-(To be determined)
+TBC
