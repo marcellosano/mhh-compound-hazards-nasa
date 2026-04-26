@@ -1,24 +1,61 @@
-__pycache__/
-*.pyc
-.ipynb_checkpoints/
-*.egg-info/
+# --- MHH project ---
+# Pipeline outputs (multi-GB NetCDFs and intermediate artefacts).
+# Regenerate by re-running the pipeline; never commit.
+Outputs/
+outputs/
+Runs/
+runs/
 
-# Data files (too large for git)
+# Raw and intermediate climate data
 *.nc
 *.nc4
-Data/
-Outputs/
+*.grib
+*.grb
+*.grib2
+*.zarr/
+isimip_data/
+ISIMIP_Data/
 
-# Non-code project files
-*.docx
-*.pptx
-*.xlsx
+# Downloader logs and reports
+download_report.csv
+*download*.log
 
-# OS artifacts
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# --- Jupyter / Colab ---
+.ipynb_checkpoints/
+*.ipynb_meta
+
+# --- Editors / OS ---
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# IDE
-.vscode/
-.idea/
+# --- Env files ---
+.env
+.envrc
+venv/
+.venv/
+env/
+
+# --- Non-code project files ---
+*.docx
+*.pptx
+*.xlsx

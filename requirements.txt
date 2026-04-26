@@ -2,8 +2,21 @@ numpy>=1.21
 pandas>=1.3
 xarray>=2022.3
 netcdf4>=1.5
+scipy>=1.10
 matplotlib>=3.4
 seaborn>=0.11
 scikit-learn>=1.0
 ipywidgets>=7.6
 pyyaml>=6.0
+# Trend statistics (Methods §4.6 modified Mann-Kendall + bootstrap CIs)
+pymannkendall>=1.4.3
+# Data downloaders
+isimip-client>=1.0
+tqdm>=4.65
+beautifulsoup4>=4.12
+requests>=2.31
+# Optional: figure base maps (used by analysis/build_publication_figures_*.py)
+geopandas>=0.14
+shapely>=2.0
+pyproj>=3.6
+pyogrio>=0.7

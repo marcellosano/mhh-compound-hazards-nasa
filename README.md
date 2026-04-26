@@ -1,29 +1,151 @@
 # MHH Compound Hazards Pipeline
 
-A dataset-agnostic pipeline for detecting compound meteorological-hydrological hazards from gridded climate data. Identifies spatiotemporally coherent extreme events using percentile-based thresholding and DBSCAN clustering, then detects compound (multi-hazard) footprints via spatial and temporal co-occurrence rules.
+A dataset-agnostic pipeline for detecting compound meteorological-hydrological
+hazards from gridded climate data. Identifies spatiotemporally coherent
+extreme events using percentile-based thresholding and DBSCAN clustering,
+then detects compound (multi-hazard) footprints via spatial and temporal
+co-occurrence rules.
 
-## What it does
+This repository accompanies a manuscript in preparation for *Nature Climate
+Change* (Sano et al.). It reproduces the late-century European analysis of
+compound windstorm, flood, and heat-drought events under SSP1-2.6, SSP3-7.0,
+and SSP5-8.5 forcing using ISIMIP3b bias-adjusted MPI-ESM1-2-HR projections,
+and includes a NEX-GDDP-CMIP6 example configuration.
 
-1. **Threshold calculation** -- Computes grid-cell-level percentile thresholds from a historical baseline period
-2. **Extreme detection** -- Flags grid-cell-days exceeding thresholds as binary extremes
-3. **DBSCAN clustering** -- Groups spatiotemporally contiguous extreme cells into coherent events, with gap-splitting for long-duration clusters
-4. **Multi-hazard footprints** -- Matches co-occurring single-hazard events (e.g., extreme heat + drought) within configurable spatial distance and temporal lag windows
+---
 
-## Quick start (Google Colab)
+## Repository layout
 
-```python
-# 1. Mount Google Drive
-from google.colab import drive
-drive.mount('/content/drive')
-
-# 2. Run the pipeline script -- it loads config and launches the dashboard
-# Set the config path before running:
-import os
-os.environ['MHH_CONFIG'] = '/content/drive/MyDrive/path/to/configs/isimip3b_europe.yaml'
-
-# 3. Execute the pipeline file (all cells)
-# The dashboard will appear with parameter controls and a "Save & Run Smart" button
 ```
+.
+├── README.md
+├── LICENSE                                 (TBD — see Citation)
+├── environment.yml                         conda env (recommended)
+├── requirements.txt                        pip alternative
+├── .gitignore                              excludes Outputs/ and *.nc
+├── mhh_pipeline_07122025.py                core pipeline (6 classes)
+├── configs/
+│   ├── isimip3b_europe.yaml                manuscript config
+│   └── nexgddp_example.yaml                NASA NEX-GDDP-CMIP6 template
+├── data/
+│   ├── README.md                           download guide
+│   ├── isimip_mpi_08_downloader.py         ISIMIP3b GCM + H08 water-sector
+│   ├── isimip_w5e5_downloader.py           W5E5 reanalysis (bias-adj. ref.)
+│   └── isimip_era5_downloader.py           20CRv3-ERA5 (event validation)
+├── analysis/
+│   ├── mhh_analysis_light_23022026.py      late-century corrected analysis
+│   └── build_publication_figures_26042026.py
+└── tests/
+    └── test_smoke.py                       end-to-end smoke test
+```
+
+Pipeline outputs (multi-GB NetCDF stacks under `Outputs/Runs/`) are
+**git-ignored** and must be regenerated locally. See
+[Reproduction](#reproduction) below.
+
+---
+
+## Quick start
+
+```bash
+git clone https://github.com/marcellosano/mhh-compound-hazards-nasa.git
+cd mhh-compound-hazards-nasa
+
+# Option A — conda (recommended, includes geopandas for figure base maps)
+conda env create -f environment.yml
+conda activate mhh
+
+# Option B — pip
+pip install -r requirements.txt
+
+# Verify the pipeline runs end-to-end on synthetic data (~1 minute)
+python tests/test_smoke.py
+```
+
+Expected output:
+
+```
+test_pipeline_runs_and_produces_compound_event ... ok
+Ran 1 test in 53.386s
+OK
+```
+
+---
+
+## Reproduction
+
+The published numbers can be reproduced in four steps.
+
+### 1. Download the input data
+
+Three download paths cover the manuscript:
+
+```bash
+# Bias-adjustment reference (W5E5 v2.0, 1981-2010, ~5 variables)
+python data/isimip_w5e5_downloader.py \
+  --variables pr tasmax hurs sfcwind ps \
+  --start-year 1981 --end-year 2010 \
+  --out ./isimip_data/w5e5
+
+# ISIMIP3b GCM data (MPI-ESM1-2-HR + H08 water; historical + 3 SSPs)
+# See script header for the expected Excel/UUID input.
+python data/isimip_mpi_08_downloader.py
+
+# Validation reanalysis (20CRv3-ERA5, 2018-2021, three known events)
+python data/isimip_era5_downloader.py
+```
+
+See [`data/README.md`](data/README.md) for source citations and disk-space
+guidance. The full ISIMIP3b pull is ~50–100 GB.
+
+### 2. Run the pipeline
+
+```bash
+export MHH_CONFIG=./configs/isimip3b_europe.yaml
+python mhh_pipeline_07122025.py
+```
+
+The pipeline writes a date-stamped run folder under
+`Outputs/Runs/<run_name>/` containing:
+
+- `Phase2_Thresholds/` — per-cell percentile thresholds
+- `Phase2_Extremes/` — daily binary extreme masks
+- `Phase3_Clusters/` — DBSCAN single-hazard cluster catalogues
+- `Phase4_Footprints/` — `multihazard_<windstorm|flood|heat_drought_fire>.csv`
+- `Phase5_Analysis/` — derived statistics
+- `config.json`, `parameters_summary.txt` — exact parameters used
+
+### 3. Reproduce the manuscript tables and headline numbers
+
+```bash
+python analysis/mhh_analysis_light_23022026.py
+```
+
+Writes `table1_frequency.csv` … `table4b_return_periods.csv` and
+`key_findings.md` into `Outputs/Publication_Outputs/`.
+
+This script applies the late-century correction (30 yr historical vs
+30 yr 2071–2100), which fixes the 60 yr normalisation bug present in
+earlier drafts.
+
+### 4. Regenerate the publication figures
+
+```bash
+python analysis/build_publication_figures_26042026.py
+```
+
+Writes vector PDF + PNG for:
+
+| File | Content |
+|---|---|
+| `fig1_pipeline.{pdf,png}` | Methodology schematic (5-stage flow) |
+| `fig2_frequency.{pdf,png}` | Compound event frequency by hazard and SSP |
+| `fig3_extremes.{pdf,png}` | Duration intensification + extreme event ratio |
+| `fig4_regional_map.{pdf,png}` | AR6 regional change factors (heat-drought) |
+| `fig5_return_periods.{pdf,png}` | Return-period changes for 3 validated events |
+| `fig6_validation_map.{pdf,png}` | Detected events with future projection signal |
+
+---
 
 ## Configuration
 
@@ -31,9 +153,11 @@ The pipeline is fully configured via YAML files. See `configs/` for examples.
 
 ### 3-step workflow
 
-1. **Define your variables** -- List the climate variables you want to analyze
-2. **Set thresholds and clustering parameters** -- For each variable, configure percentile thresholds and DBSCAN spatial/temporal scales
-3. **Define compound hazard rules** -- Specify which variable combinations constitute compound events
+1. **Define your variables** — list the climate variables to analyse
+2. **Set thresholds and clustering parameters** — for each variable, configure
+   percentile thresholds and DBSCAN spatial/temporal scales
+3. **Define compound hazard rules** — specify which variable combinations
+   constitute compound events
 
 ### Variable configuration reference
 
@@ -61,8 +185,6 @@ Each variable entry in the YAML `variables:` section supports these fields:
 
 ### Multi-hazard rules reference
 
-Each rule in the `multi_hazard_rules:` section defines a compound hazard type:
-
 ```yaml
 multi_hazard_rules:
   my_compound_hazard:
@@ -77,13 +199,20 @@ multi_hazard_rules:
       min_required: 1                # how many conditioning variables must co-occur
 ```
 
-The pipeline finds primary single-hazard events, then searches for conditioning events within `time_lag_days` and a 500 km spatial window. Rules referencing variables not defined in the `variables:` section are automatically skipped with a warning.
+The pipeline finds primary single-hazard events, then searches for
+conditioning events within `time_lag_days` and a 500 km spatial window.
+Rules referencing variables not defined in `variables:` are skipped with
+a warning.
 
 ### Derived variables
 
-Some datasets provide raw component fields rather than the physical quantity the pipeline needs. For example, NEX-GDDP-CMIP6 provides eastward (`uas`) and northward (`vas`) wind components instead of scalar wind speed (`sfcwind`), and specific humidity (`huss`, in kg/kg) instead of relative humidity (`hurs`, in %). The pipeline can compute the required variables automatically at load time using built-in derivation functions — no preprocessing needed.
-
-To use a derived variable, set `derived: true` in its config and specify the source variables and derivation function:
+Some datasets provide raw component fields rather than the physical quantity
+the pipeline needs. For example, NEX-GDDP-CMIP6 provides eastward (`uas`)
+and northward (`vas`) wind components instead of scalar wind speed
+(`sfcwind`), and specific humidity (`huss`, in kg/kg) instead of relative
+humidity (`hurs`, in %). The pipeline can compute the required variables
+automatically at load time using built-in derivation functions — no
+preprocessing needed.
 
 ```yaml
 sfcwind:
@@ -94,28 +223,57 @@ sfcwind:
 ```
 
 Built-in derivation functions:
-- `windspeed_from_uv` -- Computes scalar wind speed from u/v components: `sqrt(uas^2 + vas^2)`. Use when your dataset provides separate eastward and northward wind fields.
-- `rh_from_specific_humidity` -- Converts specific humidity (kg/kg) to relative humidity (%) using the Tetens formula for saturation vapour pressure, with temperature from `tasmax`. Use when your dataset provides `huss` instead of `hurs`.
 
-If your dataset already provides a variable directly (e.g., ISIMIP3b provides `sfcwind` and `hurs` as-is), no derivation is needed — just point `file_pattern` and `nc_var_name` at the files.
+- `windspeed_from_uv` — Scalar wind speed from u/v components:
+  `sqrt(uas^2 + vas^2)`. Use when your dataset provides separate eastward
+  and northward wind fields.
+- `rh_from_specific_humidity` — Specific humidity (kg/kg) → relative
+  humidity (%) via Tetens saturation vapour pressure, with temperature from
+  `tasmax`. Use when your dataset provides `huss` instead of `hurs`.
+
+If your dataset already provides a variable directly (e.g., ISIMIP3b
+provides `sfcwind` and `hurs` as-is), no derivation is needed — just
+point `file_pattern` and `nc_var_name` at the files.
 
 ### Example configs
 
-- `configs/isimip3b_europe.yaml` -- ISIMIP3b bias-adjusted projections over Europe (0.5deg, 10 variables, 3 compound types)
-- `configs/nexgddp_example.yaml` -- NASA NEX-GDDP-CMIP6 template (0.25deg, example variables with derivations)
+- `configs/isimip3b_europe.yaml` — ISIMIP3b bias-adjusted projections over
+  Europe (0.5°, 10 variables, 3 compound types)
+- `configs/nexgddp_example.yaml` — NASA NEX-GDDP-CMIP6 template (0.25°,
+  example variables with derivations)
 
-## Requirements
+---
 
+## Smoke test
+
+`tests/test_smoke.py` runs the full pipeline on a single Mediterranean grid
+box for one calendar year of synthetic data. It injects a hot + dry-soil
+July anomaly and asserts that the resulting compound footprint catalogue
+is non-empty. Use it to confirm a fresh clone is healthy:
+
+```bash
+python tests/test_smoke.py        # standalone
+pytest tests/test_smoke.py -q     # via pytest if installed
 ```
-pip install -r requirements.txt
-```
 
-Core dependencies: numpy, pandas, xarray, netcdf4, scikit-learn, matplotlib, seaborn, ipywidgets, pyyaml
+Expect ~1 minute runtime on a laptop. The test does **not** require
+downloaded ISIMIP data.
+
+---
 
 ## Citation
 
-TBC
+If you use this pipeline, please cite:
+
+> Sano, M., Ferrario, D. M., Torresan, S., Critto, A. (in preparation).
+> Compound meteorological-hydrological hazard detection using DBSCAN
+> clustering of climate projections. *Nature Climate Change*.
+
+A Zenodo archive of this repository will be linked here at the time of
+manuscript submission for the Code Availability statement.
 
 ## License
 
-TBC
+License is to be determined and will be added at the time of publication.
+Until then, the contents of this repository are made available for
+academic review and reproduction of the accompanying manuscript.
